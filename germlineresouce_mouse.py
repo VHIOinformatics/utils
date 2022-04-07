@@ -2,47 +2,42 @@ import vcf
 import sys
 import re
 import os
-
-if not  os.path.exists("mgp.v5.merged.snps_all.dbSNP142.vcf.gz"):
-    wget = "wget http://crispor.tefor.net/genomes/mm10/mgp.v5.merged.snps_all.dbSNP142.vcf.gz -O mgp.v5.merged.snps_all.dbSNP142.vcf.gz"
+import gzip
+mgp_url="ftp-mouse.sanger.ac.uk/REL-1807-SNPs_Indels/mgp.v6.merged.norm.snp.indels.sfiltered.vcf.gz"
+mgp=mgp_url.split("/")[-1]
+if not  os.path.exists(mgp):
+    wget = "wget "+mgp_url
     os.system(wget)
 
-os.system("gunzip mgp.v5.merged.snps_all.dbSNP142.vcf.gz")
-r_sys="cut  -f 1-8 mgp.v5.merged.snps_all.dbSNP142.vcf > mgp.v5.merged.snps_all.dbSNP142_fourcol.vcf"
-os.system(r_sys)
-os.remove("mgp.v5.merged.snps_all.dbSNP142.vcf")
-vcf_reader = vcf.VCFReader(open("mgp.v5.merged.snps_all.dbSNP142_fourcol.vcf"))
-out1="mgp.v5.merged.snps_all.dbSNP142_AF.vcf"
-out2="mm10_germline_resource.vcf"
-vcf_writer = vcf.Writer(open(out1, 'w'), vcf_reader)
+if not os.path.exists("GRCm38_germline_resource.vcf"):
 
-for rec in vcf_reader:
-    DP4 = rec.INFO['DP4']
-    ref_total = float(DP4[0] + DP4[1])
-    alt_total = float(DP4[2] + DP4[3])
-    try:
-        AF = alt_total/(ref_total + alt_total)
-    except:
-        AF=0
-    rec.INFO['AF'] = AF
-    vcf_writer.write_record(rec)
-vcf_writer.close()
-vcf_writer.close()
-os.remove("mgp.v5.merged.snps_all.dbSNP142_fourcol.vcf")
-infile=open(out1,"r")
-outfile=open(out2,"w")
-for line in infile:
-    if "##source" in line or "##FORMAT" in line:
-        continue
-    outfile.write(line)
-    if "##INFO=<ID=DP" in line:
-        TPRINT="##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele Frequency\">\n"
-        outfile.write(TPRINT)
+    o=open("GRCm38_germline_resource.vcf","w")
+    with gzip.open(mgp,'r') as fin:
+        for line in fin:
+            line=line.decode("utf-8")
+            if "#" in line:
+                if "Het" in line:
+                    continue
+                if "##INFO" in line and "ID=DP" in line:
+                    line+="##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele Frequency\">\n"
+                o.write(line)
+            
+            else:
+                tmp=line.split("\t")
+                l="\t".join(tmp[0:8])
+                DP4= list(filter(lambda a: 'DP4' in a, tmp[7].split(";")))[0].split("=")[1].split(",")
+                
+                ref_total = float(DP4[0] + DP4[1])
+                alt_total = float(DP4[2] + DP4[3])
+                try:
+                    AF = str(alt_total/(ref_total + alt_total))
+                except:
+                    AF=str(0)
+                l+=";AF="+AF[0:6]+"\n"
+                o.write(l)
 
-infile.close()
-os.remove(out1)
-outfile.close()
-bgzip="bgzip "+out2
+    o.close()
+bgzip="bgzip GRCm38_germline_resource.vcf "
 os.system(bgzip)
-tbi="tabix -f -p vcf "+out2+".gz"
+tbi="tabix -f -p vcf GRCm38_germline_resource.vcf.gz"
 os.system(tbi)
